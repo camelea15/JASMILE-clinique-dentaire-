@@ -81,46 +81,61 @@ export const AppointmentSection: React.FC<AppointmentSectionProps> = ({
     '14:00', '14:45', '15:30', '16:15', '17:00', '17:45'
   ];
 
-  // Sanitize text input against HTML injection / XSS without stripping active spaces
+  // Sanitize text input against HTML injection / XSS / control characters
   const sanitizeText = (input: string) => {
-    return input.replace(/[<>]/g, '');
+    // Remove tags, brackets, null bytes, and non-printable control chars
+    return input.replace(/[<>{}|[\]\\]/g, '').replace(/[\x00-\x1F\x7F]/g, '');
   };
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    // Full Name
-    if (!formData.fullName.trim()) {
+    // Full Name: 3 to 70 characters
+    const trimmedName = formData.fullName.trim();
+    if (!trimmedName) {
       newErrors.fullName = t.appointment.form.errors.fullNameRequired;
-    } else if (formData.fullName.trim().length < 3) {
+    } else if (trimmedName.length < 3) {
       newErrors.fullName = 'Le nom doit comporter au moins 3 caractères.';
+    } else if (trimmedName.length > 70) {
+      newErrors.fullName = 'Le nom ne doit pas dépasser 70 caractères.';
     }
 
-    // Phone
+    // Phone: Algerian mobile format or international format with 9-15 digits
     const phoneClean = formData.phone.replace(/[\s\-\.]/g, '');
-    const phoneRegex = /^(\+213|00213|0)[567][0-9]{8}$/;
+    const dzRegex = /^(\+213|00213|0)[567][0-9]{8}$/;
+    const intlRegex = /^\+?[0-9]{9,15}$/;
     if (!formData.phone.trim()) {
       newErrors.phone = t.appointment.form.errors.phoneRequired;
-    } else if (!phoneRegex.test(phoneClean) && phoneClean.length < 9) {
+    } else if (!dzRegex.test(phoneClean) && !intlRegex.test(phoneClean)) {
       newErrors.phone = t.appointment.form.errors.phoneInvalid;
     }
 
-    // Email
-    if (formData.email.trim()) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(formData.email.trim())) {
+    // Email (optional, but if provided must be RFC compliant & <= 100 chars)
+    const trimmedEmail = formData.email.trim();
+    if (trimmedEmail) {
+      const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+      if (!emailRegex.test(trimmedEmail) || trimmedEmail.length > 100) {
         newErrors.email = t.appointment.form.errors.emailInvalid;
       }
     }
 
-    // Service
+    // Service: Whitelist check
     if (!formData.serviceId) {
       newErrors.serviceId = t.appointment.form.errors.serviceRequired;
+    } else if (!services.some((s) => s.id === formData.serviceId)) {
+      newErrors.serviceId = 'Veuillez sélectionner un soin valide.';
+    }
+
+    // Dentist: Whitelist check if selected
+    if (formData.dentistId && !doctors.some((d) => d.id === formData.dentistId)) {
+      newErrors.dentistId = 'Praticien sélectionné non valide.';
     }
 
     // Date
     if (!formData.date) {
       newErrors.date = t.appointment.form.errors.dateRequired;
+    } else if (!/^\d{4}-\d{2}-\d{2}$/.test(formData.date)) {
+      newErrors.date = 'Format de date invalide.';
     } else {
       const selectedDate = new Date(formData.date);
       const today = new Date();
@@ -134,9 +149,16 @@ export const AppointmentSection: React.FC<AppointmentSectionProps> = ({
       }
     }
 
-    // Time Slot
+    // Time Slot: Whitelist check
     if (!formData.timeSlot) {
       newErrors.timeSlot = t.appointment.form.errors.timeRequired;
+    } else if (!timeSlots.includes(formData.timeSlot)) {
+      newErrors.timeSlot = 'Créneau horaire non valide.';
+    }
+
+    // Message length limit
+    if (formData.message && formData.message.length > 500) {
+      newErrors.message = 'Le message ne doit pas dépasser 500 caractères.';
     }
 
     setErrors(newErrors);
@@ -289,6 +311,7 @@ export const AppointmentSection: React.FC<AppointmentSectionProps> = ({
                     type="text"
                     id="appointment-fullName"
                     name="fullName"
+                    maxLength={70}
                     value={formData.fullName}
                     onChange={(e) =>
                       setFormData({ ...formData, fullName: sanitizeText(e.target.value) })
@@ -325,6 +348,7 @@ export const AppointmentSection: React.FC<AppointmentSectionProps> = ({
                     type="tel"
                     id="appointment-phone"
                     name="phone"
+                    maxLength={20}
                     value={formData.phone}
                     onChange={(e) =>
                       setFormData({ ...formData, phone: sanitizeText(e.target.value) })
@@ -362,6 +386,7 @@ export const AppointmentSection: React.FC<AppointmentSectionProps> = ({
                     type="email"
                     id="appointment-email"
                     name="email"
+                    maxLength={100}
                     value={formData.email}
                     onChange={(e) =>
                       setFormData({ ...formData, email: sanitizeText(e.target.value) })
@@ -529,6 +554,7 @@ export const AppointmentSection: React.FC<AppointmentSectionProps> = ({
                   id="appointment-message"
                   name="message"
                   rows={3}
+                  maxLength={500}
                   value={formData.message}
                   onChange={(e) =>
                     setFormData({ ...formData, message: sanitizeText(e.target.value) })
